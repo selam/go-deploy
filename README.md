@@ -21,10 +21,10 @@ deploy.json very simple file, if there is a {$name} variable on pre-build and po
         "args": [""]
     },
     "pre-build": [
-       {"command": "echo", args: ["hello world"]}
+       {"command": "echo", "args": ["hello world"]}
     ],
     "post-build": [
-       {"command": "rsync", args: ["{$name}", "hostname:/path/to/"]
+       {"command": "rsync", "args": ["{$name}", "hostname:/path/to/"]},
        {"command": "ssh", "args": ["hostname", "supervisorctl restart {$name}"]}
     ]
 
