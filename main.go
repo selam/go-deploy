@@ -53,6 +53,8 @@ type DeployJSON struct {
 	Build struct{
 		Args string `json:"args"`
 	      } `json:"build"`
+	PreBuild []string `json:"pre-build"`
+	PostBuild []string `json:"post-build"`
 }
 
 func retrieveDeploy(p string) (*DeployJSON, error) {
@@ -108,7 +110,8 @@ func main() {
 
 	for gopath, projects := range founded {
 		if 1 < len(projects) {
-			fmt.Printf("we found a conflict, multiple %s in same GOPATH; resolving this issue you make sure to \ngive more distinct name or path file project\n", args[0])
+			fmt.Printf("we found a conflict, multiple %s in same GOPATH; resolving this issue you make sure to " +
+				"\ngive more distinct name or path file project\n", args[0])
 			os.Exit(-1)
 		}
 		// now everything is ok, we are gona read this deploy file and execute scenario's
@@ -118,14 +121,33 @@ func main() {
 			fmt.Printf("We got an error while reading deploy.json; %s\n", err.Error())
 			os.Exit(-1)
 		}
-		// fully name of project
-		//fmt.Println(fmt.Sprintf("%c", os.PathSeparator))
-		fmt.Println(strings.Replace(project, fmt.Sprintf("%s%c",gopath, os.PathSeparator), "", -1))
-		output, err := exec.Command("go", "build", "--o", deploy.Name, deploy.Build.Args, strings.Replace(project, fmt.Sprintf("%s%c",gopath, os.PathSeparator), "", -1)).CombinedOutput()
+
+		// now we just make a loop for before build commands
+		for _, command := range deploy.PreBuild {
+			output, err := exec.Command(command).CombinedOutput()
+			if err != nil {
+				fmt.Printf("we got an error trying to execute '%s';\n\n\n%s", command, output)
+				os.Exit(-1)
+			}
+		}
+
+
+		full_name := strings.Replace(project, fmt.Sprintf("%s%c",gopath, os.PathSeparator), "", -1)
+		output, err := exec.Command("go", "build", "-o", deploy.Name,
+			deploy.Build.Args, full_name).CombinedOutput()
 
 		if err != nil {
 			fmt.Printf("we got an error trying to execute go build;\n\n\n%s", output)
 			os.Exit(-1)
+		}
+
+		// now we just make a loop for after build commands
+		for _, command := range deploy.PostBuild {
+			output, err := exec.Command(command).CombinedOutput()
+			if err != nil {
+				fmt.Printf("we got an error trying to execute '%s';\n\n\n%s", command, output)
+				os.Exit(-1)
+			}
 		}
 
 		fmt.Printf("%v \n", deploy.Name)
