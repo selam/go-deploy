@@ -1,3 +1,13 @@
 {
-  "name": "deploy"
+  "name": "deploy",
+  "pre-build": [
+    {"command": "echo", "args":["hello world"]}
+  ],
+  "build": {
+    "args": []
+  },
+  "post-build": [
+    {"command": "rsync", "args": ["--info=progress2", "{$name}", "hostname:/tmp/{$name}"]},
+    {"command": "ssh", "args": ["hostname", "supervisorctl restart {$name}"]}
+  ]
 }

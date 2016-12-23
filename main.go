@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"runtime"
 	"os/exec"
+	"bufio"
+	"time"
 )
 
 var (
@@ -47,14 +49,18 @@ func findApplicationInPath(pth, app string) ([]string) {
 	return paths
 }
 
+type Command struct {
+	Command string `json:"command"`
+	Args []string `json:"args"`
+}
 
 type DeployJSON struct {
 	Name string `json:"name"`
 	Build struct{
-		Args string `json:"args"`
-	      } `json:"build"`
-	PreBuild []string `json:"pre-build"`
-	PostBuild []string `json:"post-build"`
+		Args []string `json:"args"`
+      	} `json:"build"`
+	PreBuild []Command `json:"pre-build"`
+	PostBuild []Command `json:"post-build"`
 }
 
 func retrieveDeploy(p string) (*DeployJSON, error) {
@@ -71,6 +77,33 @@ func retrieveDeploy(p string) (*DeployJSON, error) {
 	return &deploy, nil
 }
 
+
+func run(command Command, name string) {
+	//build command
+	fmt.Println(fmt.Sprintf("Executing %s commmand", command.Command))
+	cmd := exec.Command(command.Command)
+	for _, arg := range command.Args {
+		cmd.Args = append(cmd.Args, strings.Replace(arg, "{$name}", name, -1))
+	}
+	cmdReader, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error creating StdoutPipe for Cmd", err)
+		os.Exit(-1)
+	}
+	scanner := bufio.NewScanner(cmdReader)
+	go func() {
+		for scanner.Scan() {
+			fmt.Printf("%s\n", scanner.Text())
+		}
+	}()
+
+	err = cmd.Start()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "we got an error trying to execute", command.Command)
+		os.Exit(-1)
+	}
+	cmd.Wait()
+}
 
 func main() {
 
@@ -99,58 +132,55 @@ func main() {
 		}
 	}
 
-	if 0 == len(founded) {
-		fmt.Printf("%s not found in GOPATH envs, make sure you have deploy.json in your project root\n", args[0])
-		os.Exit(-1)
-	}
 	if  1 < len(founded) {
-		fmt.Printf("we found a conflict, %s inside of multiple GOPATH, please resolve this issue\n", args[0])
+		fmt.Println(fmt.Sprintf("we found a conflict, %s inside of multiple GOPATH, please resolve this issue", args[0]))
 		os.Exit(-1)
 	}
 
 	for gopath, projects := range founded {
 		if 1 < len(projects) {
-			fmt.Printf("we found a conflict, multiple %s in same GOPATH; resolving this issue you make sure to " +
-				"\ngive more distinct name or path file project\n", args[0])
+			fmt.Println(fmt.Sprintf("we found a conflict, multiple %s in same GOPATH; resolving this issue you make sure to", args[0]))
+			fmt.Println("give more distinct name or path file project")
 			os.Exit(-1)
 		}
 		// now everything is ok, we are gona read this deploy file and execute scenario's
 		project := projects[0]
 		deploy, err := retrieveDeploy(project)
 		if err != nil  {
-			fmt.Printf("We got an error while reading deploy.json; %s\n", err.Error())
+			fmt.Println(fmt.Sprintf("We got an error while reading deploy.json; %s", err.Error()))
 			os.Exit(-1)
 		}
+		start := time.Now()
 
 		// now we just make a loop for before build commands
 		for _, command := range deploy.PreBuild {
-			output, err := exec.Command(command).CombinedOutput()
-			if err != nil {
-				fmt.Printf("we got an error trying to execute '%s';\n\n\n%s", command, output)
-				os.Exit(-1)
-			}
+			run(command, deploy.Name)
 		}
 
-
+		//build command
 		full_name := strings.Replace(project, fmt.Sprintf("%s%c",gopath, os.PathSeparator), "", -1)
-		output, err := exec.Command("go", "build", "-o", deploy.Name,
-			deploy.Build.Args, full_name).CombinedOutput()
+		cmd := exec.Command("go","build", "-o", deploy.Name)
 
+		if 0 < len(deploy.Build.Args) {
+			cmd.Args = append(cmd.Args, deploy.Build.Args...)
+		}
+		cmd.Args = append(cmd.Args, full_name)
+		output, err := cmd.CombinedOutput()
 		if err != nil {
-			fmt.Printf("we got an error trying to execute go build;\n\n\n%s", output)
+			fmt.Println("we got an error trying to execute go build")
+			fmt.Println(output)
 			os.Exit(-1)
 		}
 
 		// now we just make a loop for after build commands
 		for _, command := range deploy.PostBuild {
-			output, err := exec.Command(command).CombinedOutput()
-			if err != nil {
-				fmt.Printf("we got an error trying to execute '%s';\n\n\n%s", command, output)
-				os.Exit(-1)
-			}
+			run(command, deploy.Name)
 		}
 
-		fmt.Printf("%v \n", deploy.Name)
+		fmt.Println(fmt.Sprintf("deploying %s take %s", args[0], time.Since(start)))
+		os.Exit(0)
 	}
 
+	fmt.Println(fmt.Sprintf("%s not found in GOPATH envs, make sure you have deploy.json in your project root", args[0]))
+	os.Exit(-1)
 }
