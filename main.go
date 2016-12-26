@@ -168,7 +168,7 @@ func main() {
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			fmt.Println("we got an error trying to execute go build")
-			fmt.Println(output)
+			fmt.Println(string(output))
 			os.Exit(-1)
 		}
 
